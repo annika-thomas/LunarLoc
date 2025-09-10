@@ -15,4 +15,7 @@ if __name__ == "__main__":
     first_traverse = FrameDataReader(str(lac_path / args.t))
 
     plot_csv_dataset(first_traverse)
+    savepath = f"outputs/TRAVERSE_{first_traverse.metadata['description'].replace(' ', '_')}.png"
+    plt.savefig(savepath)
+    print(f"Saved plot to: {savepath}")
     plt.show()

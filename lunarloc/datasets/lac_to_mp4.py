@@ -58,7 +58,7 @@ if __name__ == "__main__":
     lac_path = Path("data")
     traverse = PlaybackAgent(str(lac_path / args.t))
 
-    output_file = f"outputs/VIDEO_{args.t.removesuffix('.lac')}.mp4"
+    output_file = f"outputs/VIDEO_{traverse._frame_data.metadata['description'].replace(' ', '_')}.mp4"
     frame_rate = 15
 
     create_video_from_images(traverse, output_file, frame_rate)
