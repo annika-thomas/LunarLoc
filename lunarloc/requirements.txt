@@ -1,0 +1,3 @@
+maple @ git+https://github.com/Robaire/MAPLE@pip
+gtsam
+-e .
