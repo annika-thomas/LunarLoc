@@ -172,9 +172,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-t", type=str, help="Agent traverse", required=True)
-    parser.add_argument(
-        "-s", type=bool, help="If true, doesnt show plots", action="store_true"
-    )
+    parser.add_argument("-s", help="If true, doesnt show plots", action="store_true")
     args = parser.parse_args()
 
     lac_path: Path = Path("data") / args.t
