@@ -35,7 +35,7 @@ cd ..
 ./resources.sh
 ```
 
-## Running
+## Running PGO
 
 To run orbslam on a dataset and add VO:
 ```
@@ -46,6 +46,18 @@ To run PGO between ground truth and orbslam (with dummy loop closures):
 ```
 python lunarloc/pgo/run_pgo.py -t dataset_name_w_orbslam.lac
 ```
+
+Computing APE between orbslam and ground truth for a dataset:
+```
+python lunarloc/pgo/run_ape.py -t dataset_name_w_orbslam.lac
+```
+
+Running any of the above scripts on ALL datasets:
+```
+./run_all.sh path/to/script.py
+```
+
+## Dataset utils
 
 Plotting just the ground truth trajectory for a .lac dataset:
 ```
