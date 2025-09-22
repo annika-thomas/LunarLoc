@@ -2,7 +2,6 @@ from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
-import pytransform3d.rotations as pyt_r
 import pytransform3d.transformations as pyt_t
 
 import gtsam
@@ -10,7 +9,7 @@ from gtsam.symbol_shorthand import X
 
 from lac_data import FrameDataReader
 from utils.plot import plot_initial_final
-
+from utils.datasets import tf_at_frame
 
 # Noise is rotation-first, then translation
 ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas(
@@ -24,26 +23,7 @@ LC_NOISE = gtsam.noiseModel.Diagonal.Sigmas(
 )  # ~3 deg, 50cm
 
 
-def tf_at_frame(frame: dict) -> np.ndarray:
-    try:
-        return pyt_t.transform_from(
-            R=pyt_r.matrix_from_euler(
-                [frame["roll"], frame["pitch"], frame["yaw"]],
-                i=0,
-                j=1,
-                k=2,
-                extrinsic=True,
-            ),
-            p=[frame["x"], frame["y"], frame["z"]],
-        )
-    except KeyError:
-        return pyt_t.transform_from(
-            R=np.eye(3),
-            p=[frame["x"], frame["y"], frame["z"]],
-        )
-
-
-def main(first_traverse: FrameDataReader):
+def main(first_traverse: FrameDataReader, silent: bool = False):
     # Read orbslam from the traverse
     orbslam_df = first_traverse.custom_records["orbslam"]
     orbslam_frames = orbslam_df["frame"].to_numpy()
@@ -108,7 +88,8 @@ def main(first_traverse: FrameDataReader):
     )
     plt.savefig(savepath)
     print(f"Plot created at: {savepath}")
-    plt.show()
+    if not silent:
+        plt.show()
 
 
 if __name__ == "__main__":
@@ -116,10 +97,13 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-t", type=str, help="First agent traverse", required=True)
+    parser.add_argument(
+        "-s", type=bool, help="If true, doesnt show plots", action="store_true"
+    )
     args = parser.parse_args()
 
     lac_path = Path("data")
     first_traverse = FrameDataReader(str(lac_path / args.t))
     assert "orbslam" in first_traverse.custom_records.keys()
 
-    main(first_traverse)
+    main(first_traverse, args.s)

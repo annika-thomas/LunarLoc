@@ -128,6 +128,8 @@ class OrbslamAgent(PlaybackAgent):
             if self.prev_estimate_orbslamframe is None:
                 return None
 
+            return False
+
             # Set estimate to previous
             estimate_orbslamframe = self.prev_estimate_orbslamframe
 
@@ -152,11 +154,27 @@ class OrbslamAgent(PlaybackAgent):
         return estimate
 
 
+class ImuAgent(PlaybackAgent):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    @property
+    def frame(self) -> int:
+        return self._frame
+
+    def step(self, input_data: dict) -> np.ndarray | None:
+        """Execute one step of navigation"""
+        return estimate
+
+
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-t", type=str, help="Agent traverse", required=True)
+    parser.add_argument(
+        "-s", type=bool, help="If true, doesnt show plots", action="store_true"
+    )
     args = parser.parse_args()
 
     lac_path: Path = Path("data") / args.t
@@ -169,6 +187,7 @@ if __name__ == "__main__":
 
     # Collect orbslam vo estimates
     done = False
+    tracked_frames = 0
     frame = agent.frame
     prev_estimate = None
     estimates = []
@@ -177,7 +196,7 @@ if __name__ == "__main__":
     while not done:
         input_data = agent.input_data()
         estimate = agent.step(input_data)
-        if estimate is not None:
+        if estimate is not None and estimate is not False:
             estimates.append(estimate)
             frames.append(frame)
 
@@ -187,6 +206,10 @@ if __name__ == "__main__":
             or prev_estimate is None
             or np.array_equal(estimate, prev_estimate)
         )
+
+        if estimate is False:
+            print("Aborting orbslam VO after unrecoverable tracking loss.")
+            break
 
         frame = agent.step_frame()
         prev_estimate = estimate
@@ -237,10 +260,11 @@ if __name__ == "__main__":
     traverse = FrameDataReader(str(lac_path))
 
     ax = plot_csv_dataset(traverse)
-    ax = plot_trajectory(estimates, highlights=lost_tracking, ax=ax)
+    ax = plot_trajectory(estimates, ax=ax)  # highlights=lost_tracking, ax=ax)
     savepath = (
         f"outputs/ORBSLAM_{traverse.metadata['description'].replace(' ', '_')}.png"
     )
     plt.savefig(savepath)
     print(f"Plot created at: {savepath}")
-    plt.show()
+    if not args.s:
+        plt.show()

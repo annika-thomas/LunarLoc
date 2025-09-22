@@ -1,3 +1,4 @@
 maple @ git+https://github.com/Robaire/MAPLE@pip
 gtsam
+evo
 -e .
