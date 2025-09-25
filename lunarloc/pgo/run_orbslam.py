@@ -1,15 +1,31 @@
 import numpy as np
-import pandas as pd
-import tarfile
-import io
-import os
+import pytransform3d.transformations as pyt_t
+import pytransform3d.rotations as pyt_r
 from pathlib import Path
 import tqdm
 
 from lac_data import PlaybackAgent, FrameDataReader
 
-from maple.pose.stereoslam import SimpleStereoSLAM
-from maple.utils import carla_to_pytransform
+try:
+    from maple.pose.stereoslam import SimpleStereoSLAM
+except Exception:
+    print("MAPLE REPO NOT DETECTED, CANNOT USE ORBSLAM")
+
+from utils.datasets import store_trajectory
+
+
+def carla_to_pytransform(transform):
+    """Convert a carla transform to a pytransform."""
+
+    # Extract translation
+    translation = [transform.location.x, transform.location.y, transform.location.z]
+
+    # For ZYX convention
+    euler = [transform.rotation.yaw, transform.rotation.pitch, transform.rotation.roll]
+    rotation = pyt_r.matrix_from_euler(euler, 2, 1, 0, False)
+
+    # Create 4x4 transformation matrix
+    return pyt_t.transform_from(rotation, translation)
 
 
 def correct_pose_orientation(pose):
@@ -154,9 +170,20 @@ class OrbslamAgent(PlaybackAgent):
         return estimate
 
 
-class ImuAgent(PlaybackAgent):
+class DummyImuAgent(PlaybackAgent):
+    TRANSLATION_NOISE = 0.005  # meters
+    ROTATION_NOISE = 0.005  # radians
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.prev_pose = carla_to_pytransform(self.get_initial_position())
+        self.prev_frame_num = None
+        self.t_noise_model = lambda: np.random.normal(
+            loc=0.0, scale=self.TRANSLATION_NOISE, size=3
+        )
+        self.w_noise_model = lambda: np.random.normal(
+            loc=0.0, scale=self.ROTATION_NOISE, size=3
+        )
 
     @property
     def frame(self) -> int:
@@ -164,7 +191,39 @@ class ImuAgent(PlaybackAgent):
 
     def step(self, input_data: dict) -> np.ndarray | None:
         """Execute one step of navigation"""
-        return estimate
+        if self.prev_frame_num is None:
+            self.prev_frame_num = self.frame
+            return self.prev_pose
+
+        prev_frame = self._frame_data[self.prev_frame_num]
+        this_frame = self._frame_data[self.frame]
+
+        pos_prev = np.array([prev_frame["x"], prev_frame["y"], prev_frame["z"]])
+        pos_cur = np.array([this_frame["x"], this_frame["y"], this_frame["z"]])
+        dt_world = pos_cur - pos_prev
+        dt_noise = dt_world + self.t_noise_model()
+
+        rpy_prev = np.array(
+            [prev_frame["roll"], prev_frame["pitch"], prev_frame["yaw"]]
+        )
+        rpy_cur = np.array([this_frame["roll"], this_frame["pitch"], this_frame["yaw"]])
+
+        R_prev = pyt_r.matrix_from_euler(rpy_prev, i=0, j=1, k=2, extrinsic=True)
+        R_cur = pyt_r.matrix_from_euler(rpy_cur, i=0, j=1, k=2, extrinsic=True)
+
+        dt_rot = R_prev.T @ dt_noise
+
+        R_delta = R_prev.T @ R_cur
+        R_noise = pyt_r.matrix_from_euler(
+            self.w_noise_model(), i=0, j=1, k=2, extrinsic=True
+        )
+        R_delta_noisy = R_delta @ R_noise
+
+        T_odom = pyt_t.transform_from(R=R_delta_noisy, p=dt_rot)
+        self.prev_pose = self.prev_pose @ T_odom
+
+        self.prev_frame_num = self.frame
+        return self.prev_pose
 
 
 if __name__ == "__main__":
@@ -177,7 +236,10 @@ if __name__ == "__main__":
 
     lac_path: Path = Path("data") / args.t
     traverse_name = args.t.removesuffix(".lac")
-    agent = OrbslamAgent(str(lac_path))
+
+    # CHANGE THESE TO PICK THE ODOM SOURCE
+    # agent = OrbslamAgent(str(lac_path))
+    agent = DummyImuAgent(str(lac_path))
 
     pbar = tqdm.tqdm(
         total=len(agent._frame_data.frames["frame"]) - 1, desc="Processing frames"
@@ -218,37 +280,7 @@ if __name__ == "__main__":
     pbar.close()
 
     estimates = np.stack(estimates, axis=0)
-    N = estimates.shape[0]
-    flat_estimates = estimates.reshape(N, 16)
-
-    # Store in dataframe
-    df = pd.DataFrame(
-        flat_estimates, columns=[f"m{i}{j}" for i in range(4) for j in range(4)]
-    )
-    df.insert(0, "frame", frames)
-    csv_bytes = df.to_csv(index=False).encode("utf-8")
-
-    # Build new archive with everything + orbslam.csv
-    tmp_path = lac_path.with_suffix(".tmp")
-    with (
-        tarfile.open(lac_path, "r:gz") as old_tar,
-        tarfile.open(tmp_path, "w:gz") as new_tar,
-    ):
-        # Copy all existing members
-        for member in old_tar.getmembers():
-            f = old_tar.extractfile(member)
-            if f is not None:
-                new_tar.addfile(member, f)
-            else:
-                new_tar.addfile(member)
-
-        # Add the orbslam data
-        tarinfo = tarfile.TarInfo(name="custom/orbslam.csv")
-        tarinfo.size = len(csv_bytes)
-        new_tar.addfile(tarinfo, io.BytesIO(csv_bytes))
-
-    # Replace original with the updated archive
-    os.replace(tmp_path, lac_path)
+    store_trajectory(args.t, estimates, frames, "orbslam")
     print(f"Added custom/orbslam.csv to {traverse_name}.lac")
 
     # Plot
