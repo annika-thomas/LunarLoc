@@ -1,19 +1,20 @@
 from pathlib import Path
 import matplotlib.pyplot as plt
-import copy
+from pprint import pprint
 
 from evo.core import sync
 from evo.core import metrics
 from evo.tools import plot
 from evo.core.trajectory import PoseTrajectory3D
 
-from utils.datasets import extract_orbslam, extract_gt
+from utils.datasets import extract_orbslam, extract_gt, extract_imu
 
 from lac_data import FrameDataReader
 
 
 def main(traverse: FrameDataReader, silent: bool = False):
-    orbslam_estimates, orbslam_frames = extract_orbslam(traverse)
+    # orbslam_estimates, orbslam_frames = extract_orbslam(traverse)
+    orbslam_estimates, orbslam_frames = extract_imu(traverse)
     gt_traj, gt_frames = extract_gt(traverse)
 
     traj_ref = PoseTrajectory3D(poses_se3=gt_traj, timestamps=gt_frames.astype(float))
@@ -23,10 +24,7 @@ def main(traverse: FrameDataReader, silent: bool = False):
 
     traj_ref, traj_est = sync.associate_trajectories(traj_ref, traj_est)
 
-    traj_est_aligned = copy.deepcopy(traj_est)
-    traj_est_aligned.align(traj_ref, correct_scale=False, correct_only_scale=False)
-
-    data = (traj_ref, traj_est_aligned)
+    data = (traj_ref, traj_est)
     pose_relation = metrics.PoseRelation.translation_part
     ape_metric = metrics.APE(pose_relation)
     ape_metric.process_data(data)
@@ -46,6 +44,7 @@ def main(traverse: FrameDataReader, silent: bool = False):
     savepath = f"outputs/APE_{traverse.metadata['description'].replace(' ', '_')}.png"
     plt.savefig(savepath)
     print(f"Plot created at: {savepath}")
+    pprint(ape_stats)
     if not silent:
         plt.show()
 

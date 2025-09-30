@@ -14,5 +14,6 @@ for file in data/*; do
 done
 
 
-# TODO: 
-# - Look into IMU only odometry
+# - add imu data to the .lac files, around 1 meter towards the end of 15m traverse
+# - store ape error into the .lac file as well?
+# - look into netvladd/ransac to get a comparison point

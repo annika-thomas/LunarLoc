@@ -35,6 +35,13 @@ def extract_orbslam(dataset):
     return extract_trajectory(dataset, "orbslam")
 
 
+def extract_imu(dataset):
+    """Returns imu_estimates (Nx4x4) and imu_frames (N)"""
+
+    # Read orbslam from the traverse
+    return extract_trajectory(dataset, "imu")
+
+
 def extract_gt(dataset):
     """Returns groundtruth_trajectory (Nx4x4) and groundtruth_frames (N)"""
 

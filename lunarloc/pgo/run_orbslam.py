@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.stats import truncnorm
 import pytransform3d.transformations as pyt_t
 import pytransform3d.rotations as pyt_r
 from pathlib import Path
@@ -171,19 +172,51 @@ class OrbslamAgent(PlaybackAgent):
 
 
 class DummyImuAgent(PlaybackAgent):
-    TRANSLATION_NOISE = 0.005  # meters
-    ROTATION_NOISE = 0.005  # radians
+    DT = 0.1  # s
+
+    TRANSLATION_NOISE = 4.2e-5  # m
+    ROTATION_NOISE = 2.2e-4  # rad
+
+    YAW_BIAS = 7.8e-4  # rad/s
+    YAW_BIAS_MIN = 0.7 * YAW_BIAS  # remove biases below 70% of spec
+    YAW_BIAS_MAX = 1.3 * YAW_BIAS  # remove biases above 130% of spec
+    YAW_BIAS_RW = 2.8e-4  # rad/s/sqrt(s)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.prev_pose = carla_to_pytransform(self.get_initial_position())
         self.prev_frame_num = None
+
+        # Translational noise model
         self.t_noise_model = lambda: np.random.normal(
             loc=0.0, scale=self.TRANSLATION_NOISE, size=3
         )
-        self.w_noise_model = lambda: np.random.normal(
-            loc=0.0, scale=self.ROTATION_NOISE, size=3
+
+        # Rotational noise model
+        abs_bias = truncnorm.rvs(
+            self.YAW_BIAS_MIN / self.YAW_BIAS,
+            self.YAW_BIAS_MAX / self.YAW_BIAS,
+            loc=0,
+            scale=self.YAW_BIAS,
         )
+        sign = 1 if (np.random.rand() > 0.5) else -1
+        self.yaw_bias = sign * abs_bias
+
+        def w_noise_model():
+            # white noise
+            w = np.random.normal(loc=0.0, scale=self.ROTATION_NOISE, size=3)
+
+            # random walk
+            delta_bias = np.random.normal(
+                loc=0.0, scale=self.YAW_BIAS_RW * np.sqrt(self.DT)
+            )
+            self.yaw_bias += delta_bias
+
+            # include yaw bias in noise output
+            w[2] += self.yaw_bias * self.DT
+            return w
+
+        self.w_noise_model = w_noise_model
 
     @property
     def frame(self) -> int:
@@ -280,7 +313,8 @@ if __name__ == "__main__":
     pbar.close()
 
     estimates = np.stack(estimates, axis=0)
-    store_trajectory(args.t, estimates, frames, "orbslam")
+    # store_trajectory(args.t, estimates, frames, "orbslam")
+    store_trajectory(args.t, estimates, frames, "imu")
     print(f"Added custom/orbslam.csv to {traverse_name}.lac")
 
     # Plot
@@ -291,9 +325,10 @@ if __name__ == "__main__":
 
     ax = plot_csv_dataset(traverse)
     ax = plot_trajectory(estimates, ax=ax)  # highlights=lost_tracking, ax=ax)
-    savepath = (
-        f"outputs/ORBSLAM_{traverse.metadata['description'].replace(' ', '_')}.png"
-    )
+    # savepath = (
+    #     f"outputs/ORBSLAM_{traverse.metadata['description'].replace(' ', '_')}.png"
+    # )
+    savepath = f"outputs/IMU_{traverse.metadata['description'].replace(' ', '_')}.png"
     plt.savefig(savepath)
     print(f"Plot created at: {savepath}")
     if not args.s:
