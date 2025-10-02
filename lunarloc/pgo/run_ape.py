@@ -12,14 +12,12 @@ from utils.datasets import extract_orbslam, extract_gt, extract_imu
 from lac_data import FrameDataReader
 
 
-def main(traverse: FrameDataReader, silent: bool = False):
-    # orbslam_estimates, orbslam_frames = extract_orbslam(traverse)
-    orbslam_estimates, orbslam_frames = extract_imu(traverse)
-    gt_traj, gt_frames = extract_gt(traverse)
-
-    traj_ref = PoseTrajectory3D(poses_se3=gt_traj, timestamps=gt_frames.astype(float))
+def calc_ape(traverse_ref, frames_ref, traverse_est, frames_est):
+    traj_ref = PoseTrajectory3D(
+        poses_se3=traverse_ref, timestamps=frames_ref.astype(float)
+    )
     traj_est = PoseTrajectory3D(
-        poses_se3=orbslam_estimates, timestamps=orbslam_frames.astype(float)
+        poses_se3=traverse_est, timestamps=frames_est.astype(float)
     )
 
     traj_ref, traj_est = sync.associate_trajectories(traj_ref, traj_est)
@@ -28,9 +26,21 @@ def main(traverse: FrameDataReader, silent: bool = False):
     pose_relation = metrics.PoseRelation.translation_part
     ape_metric = metrics.APE(pose_relation)
     ape_metric.process_data(data)
-    ape_stats = ape_metric.get_all_statistics()
 
     seconds_from_start = [t - traj_est.timestamps[0] for t in traj_est.timestamps]
+
+    return ape_metric, seconds_from_start
+
+
+def main(traverse: FrameDataReader, silent: bool = False):
+    # orbslam_estimates, orbslam_frames = extract_orbslam(traverse)
+    orbslam_estimates, orbslam_frames = extract_imu(traverse)
+    gt_traj, gt_frames = extract_gt(traverse)
+
+    ape_metric, seconds_from_start = calc_ape(
+        gt_traj, gt_frames, orbslam_estimates, orbslam_frames
+    )
+    ape_stats = ape_metric.get_all_statistics()
     fig = plt.figure()
     plot.error_array(
         fig.gca(),
@@ -60,5 +70,6 @@ if __name__ == "__main__":
     lac_path = Path("data")
     first_traverse = FrameDataReader(str(lac_path / args.t))
     assert "orbslam" in first_traverse.custom_records.keys()
+    assert "imu" in first_traverse.custom_records.keys()
 
-    main(first_traverse, args.s)
+    # main(first_traverse, args.s)

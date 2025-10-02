@@ -12,8 +12,3 @@ for file in data/*; do
         echo -e "\033[31mERROR WITH DATASET: $filename\033[0m"
     fi
 done
-
-
-# - add imu data to the .lac files, around 1 meter towards the end of 15m traverse
-# - store ape error into the .lac file as well?
-# - look into netvladd/ransac to get a comparison point
